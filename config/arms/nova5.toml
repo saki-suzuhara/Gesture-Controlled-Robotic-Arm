@@ -1,0 +1,37 @@
+# 机械臂配置:Dobot Nova 5(演示最终在它上面做,现在只能在仿真里跑)。
+#
+# 单位和规矩同 jaka.toml。 ** 速度只用于仿真。**
+#
+# 怎么连真机还没定(本机 RoboDK 的 Dobot 驱动多半控制不了 V4 固件),约到 Nova 5
+# 之前再定;仿真里照样跑这一份。
+
+name = "Dobot Nova 5"
+robot_name = "Dobot Nova 5"   # 工作站 model/demo-station.rdk 里这台机械臂的名字
+
+[connection]
+driver = "robodk"
+ip = ""                       # 接法还没定,先空着
+# 上电使能怎么查还没定,所以查不了;查不了就连不了真机(第 05 票),仿真照跑。
+power_check = "none"
+
+[worktable]
+angle_deg = 0.0
+origin_mm = [0.0, 0.0, 0.0]
+
+# 待命位姿:法兰落在同一个待命点 (0, −400, 550) mm 上、肘朝上、J1 朝操作者的解。
+# 两台共用一套路点、不加平移(ADR-0003);换机械臂只重新标定工作台坐标系。
+# 来源:`notes/waypoint-reach-flange-results.md`(2026-09-20 按法兰重算,六个动作全过)。
+[standby]
+joints_deg = [-70.28, 10.58, -99.75, -0.83, 90.00, -160.28]
+
+# 指针偏移:暂时照抄 JAKA 上量到的那支指针,只作参考、不参与运动计算(ADR-0013)。
+# 约到 Nova 5 时重新量。
+[pointer]
+offset_mm = [1.11, -1.26, 280.47]
+
+[speed]
+# max_joint_degs 按官网规格填,** 约到 Nova 5 时核对 ** ;它只用来把下面的百分比换算成
+# 仿真里的 °/s,换算错了也只影响仿真的快慢。
+max_joint_degs = 180.0
+max_linear_mms = 100.0        # 直线速度上限(仿真和写配置时的参考)
+return_joint_percent = 10.0   # 回待命的关节段:最大关节速度的 10%(约 18 °/s)

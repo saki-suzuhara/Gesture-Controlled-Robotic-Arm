@@ -1,0 +1,26 @@
+[project]
+name = "robot-camera-combination"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+# 版本以原型验证过的为准(2026-09-17 摄像头原型),写成最低版本,实际版本由 uv.lock 锁定。
+# filterpy 和 scipy 是上游 dynamic_gestures 要的:scipy 它 import 了却没写进 requirements。
+dependencies = [
+    "filterpy>=1.4.5",
+    "numpy>=2.5.3",
+    "onnxruntime>=1.30.0",
+    "opencv-python>=5.0.0.93",
+    "robodk>=6.0.1",
+    "scipy>=1.18.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# 项目不装成包,测试直接从项目根目录 import robot_side
+pythonpath = ["."]
+testpaths = ["tests"]

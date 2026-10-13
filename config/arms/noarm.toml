@@ -1,0 +1,36 @@
+# 机械臂配置:空实现(NO ARM)自带的那一份。
+#
+# 不连任何机械臂、也不开 RoboDK 时用:每段运动固定等一会儿,途中能被叫停打断;
+# 不模拟报错,可达性检查一律通过(`CONTEXT.md`「空实现」)。改状态逻辑、以后调视觉
+# 部分时用它,省得每次都开 RoboDK。
+#
+#     uv run python -m robot_side.scripts.state_demo --arm noarm --debug
+#
+# 路点、待命位姿这些数照抄 JAKA 那份 —— 空实现不做运动学,这些数它一个都不看,
+# 写在这里只是为了让配置读得出来、日志里对得上。
+
+name = "NO ARM"
+robot_name = "JAKA Zu20"
+
+[connection]
+driver = "none"               # 不连任何机械臂;RoboDK 实现用的是 "robodk"
+ip = ""
+
+[worktable]
+angle_deg = 0.0
+origin_mm = [0.0, 0.0, 0.0]
+
+[standby]
+joints_deg = [118.09, 81.83, 131.94, 236.22, 90.00, 28.09]
+
+[pointer]
+offset_mm = [1.11, -1.26, 280.47]
+
+[speed]
+max_joint_degs = 30.0
+max_linear_mms = 100.0
+return_joint_percent = 33.3
+
+# 空实现每段运动等多久。调状态逻辑时可以改小,想看清每一段就改大。
+[noarm]
+segment_s = 1.0

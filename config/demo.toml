@@ -1,0 +1,268 @@
+# 演示配置:预设动作、触发手势的对应、和机械臂无关的运行参数。
+# 各台机械臂共用这一份;和某台机械臂有关的数在 config/arms/*.toml 里。
+#
+# 单位:位置 mm、角度 °、速度 mm/s、停顿秒。
+#
+# ** 速度:** 每个预设动作一个 speed_mms。直线段法兰按它走;改姿态的那几段走关节运动,
+# 关节速度按指针尖端也走这么快现算。仿真里就是这个速度。连真机时,机械臂配置里
+# `[speed] program_sets_speed = true` 才发得到控制柜,实际速度 = 这里的数 × 示教器上的
+# 速度倍率;没开时真机快慢全看示教器,改这里的数不起作用(ADR-0011 的 2026-09-23 更新)。
+#
+# 路点是 ** 法兰 ** 相对出发点的偏移(ADR-0013),在工作台坐标系里量:
+# +X 指向操作者的右手边,+Y 远离操作者,+Z 竖直向上。控制器保持工具 0。
+# 出发点是动作开始时机械臂停着的地方(停靠点);刚回过待命时就是待命点。
+# 每个预设动作逐段走过下面的路点(改姿态的段走关节运动,别的走直线),
+# ** 做完不回待命位姿 ** (2026-09-23 用户定):
+#   end = "stay"  停在最后一个路点上(左右上下前后:一次挪一步,可以叠加);
+#   end = "back"  回到出发点(画方块、点头、鞠躬:原地做一遍)。
+# 回待命只在叫停之后、已停止按回车之后,以及空闲、冷却时按 H 或做回待命手势(rock)的时候。
+#
+# 数值来源:`notes/waypoint-reach-flange-results.md`(2026-09-20 按法兰重算,两台都全过)。
+
+# 默认姿态:法兰 Z 轴竖直朝下(RX=180),再绕工作台 Z 转 90°。
+#
+# 偏航这个数来自 JAKA 的 Home 位姿(2026-09-22 现场定的,见 config/arms/jaka.toml):
+# Home 在工作台坐标系里是 RX=−179.909 RY=0.665 RZ=90.000。这里把 RX/RY 取成正正好好的
+# 180/0(把真机那 0.67° 的倾斜扶正),只照搬偏航 —— 这样每个动作的第一段只要转 0.671°,
+# 而不是 120.235°(指针尖端几乎不动,但 J6 要白转大半圈)。
+#
+# 90° 这个整数不是巧合:Home 在 ** 基坐标系 ** 里的偏航是 0,而工作台坐标系是绕 Z 转了
+# 90° 的,换算过来正好 90。基坐标系 RY=RZ=0 是要紧的 —— 那是驱动那个姿态镜像 bug 的
+# 不动点(见 jaka.toml 里的说明)。
+#
+# 角的顺序是 rotx(RX)*roty(RY)*rotz(RZ)(见 `robot_side.motion.orientation_pose`),
+# ** 不是 ** RoboDK `pose_2_xyzrpw` 的 ZYX 顺序 —— 两者的 RZ 差一个正负号。
+default_orientation_deg = [180.0, 0.0, 90.0]
+
+[run]
+countdown_s = 3.0          # 回待命前的倒计时
+cooldown_s = 1.0           # 进入空闲后的冷却
+vision_lost_after_s = 0.6  # 多久拿不到新的识别结果算识别中断(VISION LOST)
+stop_gesture_frames = 6    # 停止手势连续几帧才算
+lift_mm = 50.0             # 回待命时先沿工作台 +Z 直线抬起多少
+return_speed_mms = 160.0    # 回待命两段(抬起、回去)指针尖端走多快,和预设动作一样。
+                           # 两段都是关节运动,关节速度按尖端要走多远现算
+range_mm = [300.0, 100.0, 200.0]  # 活动范围:停靠点离待命点最多多远(±X、±Y、±Z)。
+                           # 左右各两步、上下各两步、前后各一步;做完要停到外面的就这一次不动
+                           # (OUT OF RANGE)。只管停靠点,途中够不够得着由可达性检查管
+
+# ---- 视觉一侧的判定参数 ----------------------------------------------
+# 和哪台机械臂都无关,所以和运行参数一样放在演示配置里,调参不用改代码。
+# 现在只有启动对准那几个;握拳平移、姿势保持、摄像头编号和分辨率由第 03 票加进这张表。
+# 初值是 2026-09-17 摄像头原型和起点区原型实测出来的。
+
+[vision]
+detection_region_px = [800, 600]  # 检测区域多大。1.2 m 处整幅画面里的拳头只有约 21 px,
+                              # 只送这一块才到约 34 px —— 检测区域存在的全部理由
+hold_s = 1.2                  # 整幅画面里拳头要停稳多久,之后才切到检测区域
+measure_s = 0.8               # 切过去以后量手宽量多久。两段合起来约 2 秒;
+                              # 这段里认出的拳头太少会自动延长
+still_hand_widths = 0.5       # 停稳期间手框中心最多移动几个手宽,超了这一次不算
+fist_percent = 80             # 停稳期间至少几成帧是握拳类标签(没有手的帧也算在内)
+start_zone_hand_widths = 3.0  # 起点区边长是几个手宽
+too_close_px = 107.0          # 整幅画面里的拳头手框宽超过多少就提示 TOO CLOSE。
+                              # 1.2 m 参考值约 86 px 的 1.25 倍;只提示,不拦着对准。
+                              # 2026-09-21 站着实测整幅画面里 81.5 px,要再走近 1.31 倍
+                              # 才报,操作位上不会误报
+
+# 摄像头。0 号是笔记本自带的 RGB;1280x720 处 1.2 m 的姿势标签正确率 51%,640x480
+# 只有 42%,帧率同为 30 fps(2026-09-17 原型实测),所以取大的那一档。
+camera_index = 0
+camera_px = [1280, 720]
+
+# 握拳平移(ADR-0009、ADR-0010)。三段:先在起点区里停住,再朝一个方向移动;
+# 触发前朝反方向动过就不算。下面的数是六个原型扫参后的初值,**不要自己另调** ——
+# 改了就得重跑回放测试(第 05 票)。
+settle_s = 0.3                # 停住段:拳头要停住多久
+settle_hand_widths = 0.5      # 停住段手框中心最多晃几个手宽(对准那一段的是
+                              # still_hand_widths,两段各有各的)
+settle_percent = 80           # 停住段至少几成帧是握拳类标签
+move_hand_widths = 1.5        # 移动段:要移过几个手宽才算
+move_max_s = 1.2              # 移动段最多用多久;超了不算(慢慢挪位置不该触发)
+move_percent = 60             # 移动段至少几成帧是握拳类标签(比停住段松:快速移动会漏检)
+move_axis_ratio = 3.0         # 主方向的位移至少是另一方向的几倍;斜着移被忽略,这是有意的
+# 收手抑制(REVERSE GUARD)自己有一套门槛,和上面那次移动的不一样:它另跑一个不看
+# 姿势的笔画检测器,原型(camera-prototype-4 的 zone_rule.py)用的是距离 1 个手宽、
+# 轴比 2 —— 往回收的那一下通常比有意做的手势短,拿 1.5 个手宽去量会漏掉。
+# 原型还有个 1.6 秒的笔画用时上限,这里不设:回看窗口本来就只有 1.5 秒,卡不到。
+reverse_guard_s = 1.5         # 回看多久
+reverse_guard_hand_widths = 1.0   # 反方向「动过」要动过几个手宽
+reverse_guard_axis_ratio = 2.0    # 那一下也要够直,不然斜着放手也算
+lock_timeout_s = 1.2          # 锁定超时:最后一次 READY 之后过了这么久就解除锁定
+# 前后两个方向(2026-09-23 用户定):往前(FORWARD)= 握拳往镜头推出去停住,往后(BACK)=
+# 握拳像敲桌子往下点两下。同样要先在起点区里停住、READY 锁定这只手。下面的数是
+# 2026-09-24 录的三批(推、敲各 30 次)离线定的:推 28/30(漏的两次:一次在准备段就推了,
+# 一次准备时手不在画面里)、敲后两批 18/20,互相不认错;拿以前录的上下左右、自由活动、叫停
+# 一共 11 份查,新规则一次没误触发,原来那几个手势逐条结局一个没变。
+# 移动段用时上限、推的时候中心能偏多少,和平移共用 move_max_s、move_hand_widths。
+settle_size_percent = 15      # 往前推从哪儿量起:停住段里手框宽最多变 15%,才算远近也停住了;
+                              # 从最近 move_max_s 里手框最小的那一刻量起(推得慢也量得出)
+push_size_ratio = 1.4         # 往前推:手框宽至少变成停住时的 1.4 倍(推 20 cm 约变 1.5–2.3 倍)。
+                              # 放到 1.25 也不多认出一次,只多出推一下报两次
+push_height_ratio = 1.2       # 手框高也要变大:只看宽的话,食指往旁边一指也会变宽(那次高
+                              # 1.0 倍)。推的时候高比宽长得慢,1.25 时漏过一次(高 1.247)
+push_frames = 3               # 连着 3 次看见手框够大才算,一两帧的跳变不算
+knock_hand_widths = 0.4       # 敲两下:每一下往下至少 0.4 个手宽(实测 0.5–1.3)。这里的
+                              # 手宽按最近停住时的手框宽算:推完拳头举在镜头前手框会大一倍
+knock_return_hand_widths = 0.3    # 每一下之后再抬回来至少 0.3 个手宽
+knock_window_s = 3.0          # 从第一下起到第二下往下,最多 3 秒(实测一下约 1 秒)
+knock_percent = 50            # 那一段里至少几成帧是握拳类标签。真敲两下最低 56%(敲得快
+                              # 模糊得认不出手),说话时手指着旁边上下晃那次 44%
+
+# 姿势保持(ADR-0007)。只看起点区里的手,不用锁定;触发过要先松开才能再触发。
+pose_hold_s = 1.0             # 一个姿势要保持多久
+pose_percent = 80             # 这段时间里至少几成帧是同一个姿势(没有手的帧也算在内)
+release_s = 0.3               # 松开:这个姿势连续这么久没被认出,才算松开
+
+# ---- 预设动作 ----------------------------------------------------
+# 尺寸是第一版的初值(`docs/grill-decisions.md` 第一节第 3 组),上实机后再调。
+
+[[actions]]
+name = "point_left"
+display = "POINT LEFT"
+speed_mms = 200.0
+end = "stay"
+waypoints = [{ dx_mm = -150.0 }]
+
+[[actions]]
+name = "point_right"
+display = "POINT RIGHT"
+speed_mms = 200.0
+end = "stay"
+waypoints = [{ dx_mm = 150.0 }]
+
+# 上 / 下不叫 UP / DOWN,免得和手势 FIST MOVE UP / DOWN 混
+[[actions]]
+name = "raise"
+display = "RAISE"
+speed_mms = 200.0
+end = "stay"
+waypoints = [{ dz_mm = 100.0 }]
+
+[[actions]]
+name = "lower"
+display = "LOWER"
+speed_mms = 200.0
+end = "stay"
+waypoints = [{ dz_mm = -100.0 }]
+
+# 前 / 后一次挪一步 100 mm,前后各一步(2026-09-23 用户定)。同样不叫 FORWARD / BACK,
+# 免得和手势混。+Y 远离操作者
+[[actions]]
+name = "move_away"
+display = "MOVE AWAY"
+speed_mms = 200.0
+end = "stay"
+waypoints = [{ dy_mm = 100.0 }]
+
+[[actions]]
+name = "come_closer"
+display = "COME CLOSER"
+speed_mms = 200.0
+end = "stay"
+waypoints = [{ dy_mm = -100.0 }]
+
+# 边长 100 mm 的方块,画在正对操作者的竖直平面(工作台 XZ 平面)里:
+# 左下 → 右下 → 右上 → 左上 → 左下,最后直线回到出发点(方块中心)
+[[actions]]
+name = "draw_square"
+display = "DRAW SQUARE"
+speed_mms = 200.0
+end = "back"
+waypoints = [
+  { dx_mm = -50.0, dz_mm = -50.0 },
+  { dx_mm = 50.0, dz_mm = -50.0 },
+  { dx_mm = 50.0, dz_mm = 50.0 },
+  { dx_mm = -50.0, dz_mm = 50.0 },
+  { dx_mm = -50.0, dz_mm = -50.0 },
+]
+
+# 原地点头:法兰绕平行工作台 X 轴的轴原地转,上下各转一次、往复 2 次。
+#
+# 角度 ±10°:2026-09-20 用户定(第 02 票第 2 条)。改按法兰以后法兰原地转、指针尖端
+# 会扫出半径约 280 mm 的弧,所以同样的角度看起来比原来(尖端不动、只转指针方向)大得多;
+# ±10° 时尖端前后摆 ±49 mm、抬起 4 mm。候选里的 ±5 / 8 / 10 / 12 / 15° 在两台上
+# 都通过可达性检查,这一条是「要多大」的取舍,不是够不够得着。
+[[actions]]
+name = "nod"
+display = "NOD"
+speed_mms = 200.0
+end = "back"
+waypoints = [
+  { nod_deg = 10.0 },
+  { nod_deg = -10.0 },
+  { nod_deg = 10.0 },
+  { nod_deg = -10.0 },
+]
+
+# 鞠躬:朝操作者低一次头,停一下再抬回来(OK 手势,2026-09-23 用户定)。
+#
+# 法兰往下 40 mm,同时绕平行工作台 X 轴、过法兰的轴转 −20°:nod_deg 为负时指针尖端朝操作者
+# 摆(为正时远离),尖端朝你过来约 96 mm、再低一点。停 1 秒,再原样回到出发点。和点头分得开:
+# 只一下、更深、带下沉和停顿。改姿态的那两段走关节运动(姿态镜像),按尖端速度走。
+[[actions]]
+name = "bow"
+display = "BOW"
+speed_mms = 200.0
+end = "back"
+waypoints = [{ dz_mm = -40.0, nod_deg = -20.0, pause_s = 1.0 }]
+
+# ---- 触发手势 → 预设动作 ---------------------------------------------
+# 姿势标签见 `CONTEXT.md`:比 V 是 peace,竖拇指是 like。
+# 会被认成停止手势的姿势(palm、stop、stop_inverted、three、four)不能用;
+# 握拳类标签(fist、grip、point、little_finger、fist_inverted)不能用作姿势保持。
+
+[[triggers]]
+kind = "fist_move"
+direction = "left"
+action = "point_left"
+
+[[triggers]]
+kind = "fist_move"
+direction = "right"
+action = "point_right"
+
+[[triggers]]
+kind = "fist_move"
+direction = "up"
+action = "raise"
+
+[[triggers]]
+kind = "fist_move"
+direction = "down"
+action = "lower"
+
+# 往前 = 握拳往镜头推出去停住;往后 = 握拳像敲桌子往下点两下
+[[triggers]]
+kind = "fist_move"
+direction = "forward"
+action = "move_away"
+
+[[triggers]]
+kind = "fist_move"
+direction = "back"
+action = "come_closer"
+
+[[triggers]]
+kind = "pose_hold"
+pose = "peace"
+action = "draw_square"
+
+[[triggers]]
+kind = "pose_hold"
+pose = "like"
+action = "nod"
+
+[[triggers]]
+kind = "pose_hold"
+pose = "ok"
+action = "bow"
+
+# 回待命(2026-09-23 用户定):和笔记本上按 H 同一件事,只在空闲、冷却时有效,
+# 已经在待命位姿上就不动。"home" 是保留名,不是 [[actions]] 里的预设动作。
+# rock 在 9-17 的姿势保持原型里 5 次触发 5 次、逐帧 89.7%,从没被认成叫停;
+# 会被认成 little_finger(握拳类)7.3%,只是认不出,不会认错成别的动作。
+[[triggers]]
+kind = "pose_hold"
+pose = "rock"
+action = "home"

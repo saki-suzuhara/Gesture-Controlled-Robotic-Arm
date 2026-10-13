@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# agent 工作产物
+.scratch/
+notes/
+
+# 运行日志、录下的回放数据(视频里有人)
+data/
